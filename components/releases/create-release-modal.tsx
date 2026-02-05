@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -13,10 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, Plus } from "lucide-react";
 
 interface CreateReleaseModalProps {
   open: boolean;
@@ -30,7 +28,7 @@ export function CreateReleaseModal({
   onSuccess,
 }: CreateReleaseModalProps) {
   const [title, setTitle] = useState("");
-  const [lang, setLang] = useState<"ES" | "EN" | "PT/BR">("ES");
+  const [lang, setLang] = useState<"ES" | "EN" | "PT">("ES");
   const [monthLabel, setMonthLabel] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
   const [orderIndex, setOrderIndex] = useState("0");
@@ -99,8 +97,8 @@ export function CreateReleaseModal({
         return;
       }
 
-      // Create release record
-      const { error: insertError } = await supabase
+      // Create release record with group_id = id (will update after insert)
+      const { data: insertData, error: insertError } = await supabase
         .from("new_releases")
         .insert([
           {
@@ -114,13 +112,32 @@ export function CreateReleaseModal({
             bullets: bullets.filter((b) => b.trim()),
             published: status === "published",
             tenant: null,
+            group_id: null,
           },
-        ]);
+        ])
+        .select();
 
       if (insertError) {
+        // Try to delete the uploaded image
+        await supabase.storage.from("new-releases").remove([fileName]);
         toast.error(`Failed to create release: ${insertError.message}`);
         setLoading(false);
         return;
+      }
+
+      // Update group_id to match id (for first release in group)
+      if (insertData && insertData.length > 0) {
+        const newId = insertData[0].id;
+        const { error: updateError } = await supabase
+          .from("new_releases")
+          .update({ group_id: newId })
+          .eq("id", newId);
+
+        if (updateError) {
+          toast.error(`Failed to set group: ${updateError.message}`);
+          setLoading(false);
+          return;
+        }
       }
 
       toast.success("Release created successfully!");
@@ -171,14 +188,14 @@ export function CreateReleaseModal({
           {/* Lang */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Language</Label>
-            <Select value={lang} onValueChange={(v) => setLang(v as "ES" | "EN" | "PT/BR")}>
+            <Select value={lang} onValueChange={(v) => setLang(v as "ES" | "EN" | "PT")}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ES">ES</SelectItem>
                 <SelectItem value="EN">EN</SelectItem>
-                <SelectItem value="PT/BR">PT/BR</SelectItem>
+                <SelectItem value="PT">PT</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -249,7 +266,8 @@ export function CreateReleaseModal({
                 disabled={loading}
                 className="w-full"
               >
-                + Add highlight
+                <Plus className="h-4 w-4 mr-2" />
+                Add highlight
               </Button>
             )}
           </div>
@@ -321,7 +339,7 @@ export function CreateReleaseModal({
             </Label>
             <Input
               id="month"
-              placeholder="e.g., Nov 2025"
+              placeholder="e.g., Feb 2026"
               value={monthLabel}
               onChange={(e) => setMonthLabel(e.target.value)}
               disabled={loading}

@@ -1,7 +1,8 @@
 export interface NewRelease {
   id: string;
+  group_id: string | null;
   tenant: string | null;
-  lang: "ES" | "EN" | "PT/BR";
+  lang: "ES" | "EN" | "PT";
   title: string;
   month_label: string;
   size: "sm" | "md" | "lg";

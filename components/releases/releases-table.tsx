@@ -16,6 +16,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,11 +41,22 @@ import { supabase } from "@/lib/supabase/client";
 import { MoreHorizontal, Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+interface ReleaseGroup {
+  groupKey: string;
+  principalRow: NewRelease;
+  languages: string[];
+  allRows: NewRelease[];
+}
+
 interface ReleasesTableProps {
   releases: NewRelease[];
   onEdit: (release: NewRelease) => void;
-  onPreview: (release: NewRelease) => void;
+  onPreview: (groupRows: NewRelease[]) => void;
   onRefresh: () => void;
+  filterLang: "ALL" | "ES" | "EN" | "PT";
+  setFilterLang: (lang: "ALL" | "ES" | "EN" | "PT") => void;
+  filterStatus: "ALL" | "published" | "paused";
+  setFilterStatus: (status: "ALL" | "published" | "paused") => void;
 }
 
 export function ReleasesTable({
@@ -46,6 +64,10 @@ export function ReleasesTable({
   onEdit,
   onPreview,
   onRefresh,
+  filterLang,
+  setFilterLang,
+  filterStatus,
+  setFilterStatus,
 }: ReleasesTableProps) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -62,32 +84,128 @@ export function ReleasesTable({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const filteredReleases = releases.filter(
-    (r) =>
-      r.title.toLowerCase().includes(search.toLowerCase()) ||
-      r.month_label.toLowerCase().includes(search.toLowerCase())
-  );
+  // Group releases by groupKey = group_id ?? id
+  const groupReleases = (): Map<string, NewRelease[]> => {
+    const groupMap = new Map<string, NewRelease[]>();
+    releases.forEach((release) => {
+      const groupKey = release.group_id || release.id;
+      if (!groupMap.has(groupKey)) {
+        groupMap.set(groupKey, []);
+      }
+      groupMap.get(groupKey)!.push(release);
+    });
+    return groupMap;
+  };
+
+  // Get principal row for a group (EN > ES > first)
+  const getPrincipalRow = (rows: NewRelease[]): NewRelease => {
+    const enRow = rows.find((r) => r.lang === "EN");
+    if (enRow) return enRow;
+    const esRow = rows.find((r) => r.lang === "ES");
+    if (esRow) return esRow;
+    return rows[0];
+  };
+
+  // Build grouped rows
+  const buildGroupedRows = (): ReleaseGroup[] => {
+    const groupMap = groupReleases();
+    const groups: ReleaseGroup[] = [];
+
+    groupMap.forEach((rows, groupKey) => {
+      const principalRow = getPrincipalRow(rows);
+      const languages = Array.from(new Set(rows.map((r) => r.lang)))
+        .sort((a, b) => {
+          const order = ["ES", "EN", "PT"];
+          return (order.indexOf(a) ?? 999) - (order.indexOf(b) ?? 999);
+        });
+
+      groups.push({
+        groupKey,
+        principalRow,
+        languages,
+        allRows: rows,
+      });
+    });
+
+    // Sort by order_index ASC (nulls last), then last_updated DESC
+    groups.sort((a, b) => {
+      const aOrder = a.principalRow.order_index ?? 999;
+      const bOrder = b.principalRow.order_index ?? 999;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+
+      const aUpdated = new Date(a.principalRow.updated_at).getTime();
+      const bUpdated = new Date(b.principalRow.updated_at).getTime();
+      return bUpdated - aUpdated;
+    });
+
+    return groups;
+  };
+
+  // Filter groups at group level
+  const filterGroups = (groups: ReleaseGroup[]): ReleaseGroup[] => {
+    return groups.filter((group) => {
+      // Search: match any translation in group
+      const matchesSearch =
+        search === "" ||
+        group.allRows.some(
+          (r) =>
+            r.title.toLowerCase().includes(search.toLowerCase()) ||
+            r.month_label.toLowerCase().includes(search.toLowerCase())
+        );
+
+      // Language filter
+      const matchesLang =
+        filterLang === "ALL" || group.languages.includes(filterLang);
+
+      // Status filter on principal row
+      const matchesStatus =
+        filterStatus === "ALL" ||
+        (filterStatus === "published" && group.principalRow.published) ||
+        (filterStatus === "paused" && !group.principalRow.published);
+
+      return matchesSearch && matchesLang && matchesStatus;
+    });
+  };
+
+  const groupedRows = buildGroupedRows();
+  const filteredGroups = filterGroups(groupedRows);
 
   const handleSelectAll = () => {
-    if (selectedIds.size === filteredReleases.length) {
+    if (selectedIds.size === filteredGroups.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredReleases.map((r) => r.id)));
+      // Select all rows from all filtered groups
+      const allRowIds = new Set<string>();
+      filteredGroups.forEach((group) => {
+        group.allRows.forEach((row) => {
+          allRowIds.add(row.id);
+        });
+      });
+      setSelectedIds(allRowIds);
     }
   };
 
-  const handleSelectRow = (id: string) => {
+  const handleSelectRow = (groupKey: string) => {
+    const group = filteredGroups.find((g) => g.groupKey === groupKey);
+    if (!group) return;
+
     const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
+    const groupRowIds = group.allRows.map((r) => r.id);
+
+    // Check if all rows of this group are selected
+    const allSelected = groupRowIds.every((id) => newSelected.has(id));
+
+    if (allSelected) {
+      groupRowIds.forEach((id) => newSelected.delete(id));
     } else {
-      newSelected.add(id);
+      groupRowIds.forEach((id) => newSelected.add(id));
     }
+
     setSelectedIds(newSelected);
   };
 
-  const handleDeleteSingle = (id: string) => {
-    setDeleteTarget(id);
+  const handleDeleteSingle = (groupKey: string) => {
+    setDeleteTarget(groupKey);
     setDeleteDialogOpen(true);
   };
 
@@ -100,18 +218,34 @@ export function ReleasesTable({
   const confirmDelete = async () => {
     setDeleting(true);
     try {
-      const idsToDelete = deleteTarget === "multiple" ? Array.from(selectedIds) : [deleteTarget!];
+      const idsToDelete: string[] = [];
 
-      for (const id of idsToDelete) {
-        const release = releases.find((r) => r.id === id);
-        if (release) {
-          // Delete image from storage
-          await supabase.storage
-            .from("new-releases")
-            .remove([release.image_path]);
+      if (deleteTarget === "multiple") {
+        // Get all IDs from selected rows
+        idsToDelete.push(...Array.from(selectedIds));
+      } else if (deleteTarget) {
+        // Get all row IDs from the group
+        const group = groupedRows.find((g) => g.groupKey === deleteTarget);
+        if (group) {
+          idsToDelete.push(...group.allRows.map((r) => r.id));
         }
       }
 
+      if (idsToDelete.length === 0) return;
+
+      // Delete images from storage
+      const releasesToDelete = releases.filter((r) => idsToDelete.includes(r.id));
+      const imagePathsToDelete = Array.from(
+        new Set(releasesToDelete.map((r) => r.image_path))
+      );
+
+      for (const imagePath of imagePathsToDelete) {
+        await supabase.storage
+          .from("new-releases")
+          .remove([imagePath]);
+      }
+
+      // Delete from database
       const { error } = await supabase
         .from("new_releases")
         .delete()
@@ -143,46 +277,54 @@ export function ReleasesTable({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
-          <Input
-            placeholder="Search by title or month..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-sm"
-          />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <Input
+              placeholder="Search by title or month..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteMultiple}
+              >
+                Delete ({selectedIds.size})
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteMultiple}
-            >
-              Delete ({selectedIds.size})
-            </Button>
-          )}
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <Select value={filterLang} onValueChange={(v) => setFilterLang(v as "ALL" | "ES" | "EN" | "PT")}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Languages</SelectItem>
+              <SelectItem value="ES">ES</SelectItem>
+              <SelectItem value="EN">EN</SelectItem>
+              <SelectItem value="PT">PT</SelectItem>
+            </SelectContent>
+          </Select>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {Object.entries(visibleColumns).map(([col, visible]) => (
-                <DropdownMenuItem
-                  key={col}
-                  onClick={() => toggleColumn(col as keyof typeof visibleColumns)}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <Checkbox checked={visible} onChange={() => {}} />
-                  <span className="capitalize">{col}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as "ALL" | "published" | "paused")}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Status</SelectItem>
+              <SelectItem value="published">Published</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -194,8 +336,10 @@ export function ReleasesTable({
               <TableHead className="w-12">
                 <Checkbox
                   checked={
-                    selectedIds.size === filteredReleases.length &&
-                    filteredReleases.length > 0
+                    filteredGroups.length > 0 &&
+                    filteredGroups.every((g) =>
+                      g.allRows.every((r) => selectedIds.has(r.id))
+                    )
                   }
                   onChange={handleSelectAll}
                 />
@@ -222,83 +366,121 @@ export function ReleasesTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredReleases.map((release) => (
-              <TableRow
-                key={release.id}
-                className="border-b border-slate-200 hover:bg-slate-50"
-              >
-                <TableCell>
-                  <Checkbox
-                    checked={selectedIds.has(release.id)}
-                    onChange={() => handleSelectRow(release.id)}
-                  />
-                </TableCell>
-                {visibleColumns.order && (
-                  <TableCell className="text-sm text-slate-900">
-                    {release.order_index}
-                  </TableCell>
-                )}
-                {visibleColumns.month && (
-                  <TableCell className="text-sm text-slate-900">
-                    {release.month_label}
-                  </TableCell>
-                )}
-                {visibleColumns.lang && (
-                  <TableCell className="text-sm text-slate-900">
-                    {release.lang}
-                  </TableCell>
-                )}
-                {visibleColumns.status && (
+            {filteredGroups.map((group) => {
+              const isGroupSelected = group.allRows.every((r) =>
+                selectedIds.has(r.id)
+              );
+              const lastUpdated = new Date(
+                Math.max(
+                  ...group.allRows.map((r) =>
+                    new Date(r.updated_at).getTime()
+                  )
+                )
+              ).toISOString();
+
+              return (
+                <TableRow
+                  key={group.groupKey}
+                  className="border-b border-slate-200 hover:bg-slate-50"
+                >
                   <TableCell>
-                    <Badge variant={release.published ? "default" : "secondary"}>
-                      {release.published ? "Published" : "Paused"}
-                    </Badge>
+                    <Checkbox
+                      checked={isGroupSelected}
+                      onChange={() => handleSelectRow(group.groupKey)}
+                    />
                   </TableCell>
-                )}
-                {visibleColumns.preview && (
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onPreview(release)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                )}
-                {visibleColumns.updated && (
-                  <TableCell className="text-sm text-slate-600">
-                    {formatDate(release.updated_at)}
-                  </TableCell>
-                )}
-                {visibleColumns.actions && (
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onEdit(release)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteSingle(release.id)}
-                          className="text-red-600"
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
+                  {visibleColumns.order && (
+                    <TableCell className="text-sm text-slate-900">
+                      {group.principalRow.order_index}
+                    </TableCell>
+                  )}
+                  {visibleColumns.month && (
+                    <TableCell className="text-sm text-slate-900">
+                      {group.principalRow.month_label}
+                    </TableCell>
+                  )}
+                  {visibleColumns.lang && (
+                    <TableCell className="text-sm text-slate-900">
+                      <div className="flex gap-1 flex-wrap">
+                        {group.languages.map((lang) => {
+                          let badgeClasses = "";
+                          if (lang === "ES") {
+                            badgeClasses = "bg-yellow-100 text-yellow-900 border border-yellow-200";
+                          } else if (lang === "EN") {
+                            badgeClasses = "bg-blue-100 text-blue-900 border border-blue-200";
+                          } else if (lang === "PT") {
+                            badgeClasses = "bg-green-100 text-green-900 border border-green-200";
+                          }
+                          return (
+                            <Badge key={lang} className={`${badgeClasses} px-2 py-1`}>
+                              {lang === "PT" ? "PT/BR" : lang}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </TableCell>
+                  )}
+                  {visibleColumns.status && (
+                    <TableCell>
+                      <Badge
+                        variant="default"
+                        className={
+                          group.principalRow.published
+                            ? "bg-green-100 text-green-900 border border-green-200"
+                            : "bg-slate-100 text-slate-900 border border-slate-200"
+                        }
+                      >
+                        {group.principalRow.published ? "Published" : "Paused"}
+                      </Badge>
+                    </TableCell>
+                  )}
+                  {visibleColumns.preview && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onPreview(group.allRows)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  )}
+                  {visibleColumns.updated && (
+                    <TableCell className="text-sm text-slate-600">
+                      {formatDate(lastUpdated)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.actions && (
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => onEdit(group.principalRow)}
+                          >
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteSingle(group.groupKey)}
+                            className="text-red-600"
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
 
-        {filteredReleases.length === 0 && (
+        {filteredGroups.length === 0 && (
           <div className="flex items-center justify-center py-12 text-slate-500">
             <p className="text-sm">No releases found</p>
           </div>
@@ -310,20 +492,20 @@ export function ReleasesTable({
         <AlertDialogContent className="border-slate-200 bg-white">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-slate-900">
-              Are you sure?
+              Confirm deletion
             </AlertDialogTitle>
             <AlertDialogDescription className="text-slate-600">
-              Are you sure you want to delete the selected item(s)? This action cannot be undone.
+              ¿Estás seguro que deseas eliminar los items seleccionados?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-2 justify-end">
-            <AlertDialogCancel className="border-slate-200 text-slate-700 hover:bg-slate-100">
+            <AlertDialogCancel className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               disabled={deleting}
-              className="bg-slate-900 text-white hover:bg-slate-800"
+              className="bg-white text-slate-900 border border-slate-300 hover:bg-slate-100"
             >
               {deleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>

@@ -20,6 +20,11 @@ export default function AdminPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [selectedRelease, setSelectedRelease] = useState<NewRelease | null>(null);
+  const [selectedGroupRows, setSelectedGroupRows] = useState<NewRelease[] | null>(
+    null
+  );
+  const [filterLang, setFilterLang] = useState<"ALL" | "ES" | "EN" | "PT">("ALL");
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "published" | "paused">("ALL");
 
   useEffect(() => {
     checkAuth();
@@ -81,8 +86,8 @@ export default function AdminPage() {
     router.push("/");
   };
 
-  const handlePreview = (release: NewRelease) => {
-    setSelectedRelease(release);
+  const handlePreview = (groupRows: NewRelease[]) => {
+    setSelectedGroupRows(groupRows);
     setPreviewOpen(true);
   };
 
@@ -128,6 +133,10 @@ export default function AdminPage() {
             onEdit={handleEdit}
             onPreview={handlePreview}
             onRefresh={fetchReleases}
+            filterLang={filterLang}
+            setFilterLang={setFilterLang}
+            filterStatus={filterStatus}
+            setFilterStatus={setFilterStatus}
           />
         )}
       </main>
@@ -142,7 +151,7 @@ export default function AdminPage() {
       <PreviewReleaseModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        release={selectedRelease}
+        groupRows={selectedGroupRows}
       />
 
       <EditReleaseModal
