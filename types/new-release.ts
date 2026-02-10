@@ -5,6 +5,7 @@ export interface NewRelease {
   lang: "ES" | "EN" | "PT";
   title: string;
   month_label: string;
+  month_date?: string; // Date string YYYY-MM-01
   size: "sm" | "md" | "lg";
   image_path: string;
   bullets: string[];

@@ -18,6 +18,14 @@ import { NewRelease } from "@/types/new-release";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { X, Plus, Trash2 } from "lucide-react";
+import {
+  buildMonthDate,
+  formatMonthLabel,
+  getAvailableYears,
+  getMonthNames,
+  parseMonthDate,
+  type Language,
+} from "@/lib/month-helpers";
 
 interface EditReleaseModalProps {
   open: boolean;
@@ -38,6 +46,8 @@ export function EditReleaseModal({
   const [kbUrl, setKbUrl] = useState("");
   const [status, setStatus] = useState("published");
   const [imagePath, setImagePath] = useState("");
+  const [monthNumber, setMonthNumber] = useState<string>("");
+  const [year, setYear] = useState<string>("");
   
   // Group data
   const [groupRows, setGroupRows] = useState<NewRelease[]>([]);
@@ -48,13 +58,13 @@ export function EditReleaseModal({
   
   // Per-language state for active tab
   const [tabTitle, setTabTitle] = useState("");
-  const [tabMonthLabel, setTabMonthLabel] = useState("");
   const [tabBullets, setTabBullets] = useState<string[]>([]);
   
   // Translation form draft
   const [translationDraft, setTranslationDraft] = useState({
     title: "",
-    monthLabel: "",
+    monthNumber: "",
+    year: "",
     bullets: [] as string[],
   });
 
@@ -65,6 +75,23 @@ export function EditReleaseModal({
       setKbUrl(release.kb_url);
       setStatus(release.published ? "published" : "paused");
       setImagePath(release.image_path);
+      
+      // Parse month_date to get month and year
+      if (release.month_date) {
+        try {
+          const { monthNumber: m, year: y } = parseMonthDate(release.month_date);
+          setMonthNumber(m.toString());
+          setYear(y.toString());
+        } catch (err) {
+          console.error("Error parsing month_date:", err);
+          setMonthNumber("");
+          setYear("");
+        }
+      } else {
+        setMonthNumber("");
+        setYear("");
+      }
+      
       fetchGroupRows(release.group_id || release.id);
       setShowTranslationForm(false);
     }
@@ -115,7 +142,6 @@ export function EditReleaseModal({
 
   const loadTabData = (row: NewRelease) => {
     setTabTitle(row.title);
-    setTabMonthLabel(row.month_label);
     setTabBullets(row.bullets || []);
   };
 
@@ -161,7 +187,8 @@ export function EditReleaseModal({
     setShowTranslationForm(false);
     setTranslationDraft({
       title: "",
-      monthLabel: "",
+      monthNumber: "",
+      year: "",
       bullets: [],
     });
     setNewTranslationLang("EN");
@@ -189,17 +216,25 @@ export function EditReleaseModal({
 
     if (groupRows.length === 0) return;
 
+    if (!monthNumber || !year) {
+      toast.error("Debes seleccionar mes y año");
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // Build month_date and month_label from selected month/year
+      const monthDateValue = buildMonthDate(parseInt(year), parseInt(monthNumber));
+      
       // Save current tab data to groupRows
       const updatedRows = groupRows.map((row) => {
         if (row.lang === activeTab) {
           return {
             ...row,
             title: tabTitle,
-            month_label: tabMonthLabel,
             bullets: tabBullets.filter((b) => b.trim()),
+            month_date: monthDateValue,
           };
         }
         return row;
@@ -211,8 +246,8 @@ export function EditReleaseModal({
           .from("new_releases")
           .update({
             title: row.title,
-            month_label: row.month_label,
             bullets: row.bullets,
+            month_date: monthDateValue,
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
@@ -260,6 +295,11 @@ export function EditReleaseModal({
       return;
     }
 
+    if (!translationDraft.monthNumber || !translationDraft.year) {
+      toast.error("Debes seleccionar mes y año");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -287,6 +327,17 @@ export function EditReleaseModal({
         }
       }
 
+      // Build month_date from translation draft
+      const monthDateValue = buildMonthDate(
+        parseInt(translationDraft.year),
+        parseInt(translationDraft.monthNumber)
+      );
+      const monthLabelValue = formatMonthLabel(
+        newTranslationLang as Language,
+        parseInt(translationDraft.year),
+        parseInt(translationDraft.monthNumber)
+      );
+
       // Insert new translation
       const { error: insertError } = await supabase
         .from("new_releases")
@@ -294,7 +345,8 @@ export function EditReleaseModal({
           {
             title: translationDraft.title,
             lang: newTranslationLang,
-            month_label: translationDraft.monthLabel,
+            month_label: monthLabelValue,
+            month_date: monthDateValue,
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
@@ -319,7 +371,8 @@ export function EditReleaseModal({
       setShowTranslationForm(false);
       setTranslationDraft({
         title: "",
-        monthLabel: "",
+        monthNumber: "",
+        year: "",
         bullets: [],
       });
       setNewTranslationLang("EN");
@@ -445,6 +498,43 @@ export function EditReleaseModal({
                 Same image used for all translations in this group
               </p>
             </div>
+
+            {/* Month and Year */}
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              {/* Month Dropdown */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Month *</Label>
+                <Select value={monthNumber} onValueChange={setMonthNumber}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getMonthNames("EN").map((month, idx) => (
+                      <SelectItem key={idx} value={(idx + 1).toString()}>
+                        {month}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Year Dropdown */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Year *</Label>
+                <Select value={year} onValueChange={setYear}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getAvailableYears().map((y) => (
+                      <SelectItem key={y} value={y.toString()}>
+                        {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
 
           {/* TRANSLATIONS SECTION */}
@@ -492,15 +582,13 @@ export function EditReleaseModal({
 
                     {/* Month Label */}
                     <div className="space-y-2">
-                      <Label htmlFor={`month-${row.lang}`} className="text-sm font-medium">
-                        Month Label (optional)
+                      <Label htmlFor={`month-display-${row.lang}`} className="text-sm font-medium">
+                        Month & Year
                       </Label>
-                      <Input
-                        id={`month-${row.lang}`}
-                        value={activeTab === row.lang ? tabMonthLabel : ""}
-                        onChange={(e) => activeTab === row.lang && setTabMonthLabel(e.target.value)}
-                        disabled={loading || activeTab !== row.lang}
-                      />
+                      <div className="p-2 bg-slate-50 rounded border border-slate-200 text-sm text-slate-600">
+                        {monthNumber && year ? formatMonthLabel("EN", parseInt(year), parseInt(monthNumber)) : "(Select in Shared Settings)"}
+                      </div>
+                      <p className="text-xs text-slate-500">Set in shared settings above</p>
                     </div>
 
                     {/* Bullets */}
@@ -593,15 +681,47 @@ export function EditReleaseModal({
                   />
                 </div>
 
-                {/* Month Label */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Month Label (optional)</Label>
-                  <Input
-                    placeholder="e.g., Feb 2026"
-                    value={translationDraft.monthLabel}
-                    onChange={(e) => setTranslationDraft({ ...translationDraft, monthLabel: e.target.value })}
-                    disabled={loading}
-                  />
+                {/* Month and Year */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Month Dropdown */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Month *</Label>
+                    <Select
+                      value={translationDraft.monthNumber}
+                      onValueChange={(v) => setTranslationDraft({ ...translationDraft, monthNumber: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select month" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getMonthNames("EN").map((month, idx) => (
+                          <SelectItem key={idx} value={(idx + 1).toString()}>
+                            {month}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Year Dropdown */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Year *</Label>
+                    <Select
+                      value={translationDraft.year}
+                      onValueChange={(v) => setTranslationDraft({ ...translationDraft, year: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getAvailableYears().map((y) => (
+                          <SelectItem key={y} value={y.toString()}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {/* Bullets */}

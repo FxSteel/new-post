@@ -15,6 +15,13 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { X, Plus } from "lucide-react";
+import {
+  buildMonthDate,
+  formatMonthLabel,
+  getAvailableYears,
+  getMonthNames,
+  type Language,
+} from "@/lib/month-helpers";
 
 interface CreateReleaseModalProps {
   open: boolean;
@@ -29,7 +36,8 @@ export function CreateReleaseModal({
 }: CreateReleaseModalProps) {
   const [title, setTitle] = useState("");
   const [lang, setLang] = useState<"ES" | "EN" | "PT">("ES");
-  const [monthLabel, setMonthLabel] = useState("");
+  const [monthNumber, setMonthNumber] = useState<string>(""); // 1-12
+  const [year, setYear] = useState<string>(""); // e.g., "2026"
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
   const [orderIndex, setOrderIndex] = useState("0");
   const [kbUrl, setKbUrl] = useState("");
@@ -80,6 +88,11 @@ export function CreateReleaseModal({
       return;
     }
 
+    if (!monthNumber || !year) {
+      toast.error("Debes seleccionar mes y año");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -97,6 +110,10 @@ export function CreateReleaseModal({
         return;
       }
 
+      // Build month_date and month_label
+      const monthDateValue = buildMonthDate(parseInt(year), parseInt(monthNumber));
+      const monthLabelValue = formatMonthLabel(lang as Language, parseInt(year), parseInt(monthNumber));
+
       // Create release record with group_id = id (will update after insert)
       const { data: insertData, error: insertError } = await supabase
         .from("new_releases")
@@ -104,7 +121,8 @@ export function CreateReleaseModal({
           {
             title,
             lang,
-            month_label: monthLabel,
+            month_label: monthLabelValue,
+            month_date: monthDateValue,
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
@@ -145,7 +163,8 @@ export function CreateReleaseModal({
       // Reset form
       setTitle("");
       setLang("ES");
-      setMonthLabel("");
+      setMonthNumber("");
+      setYear("");
       setSize("md");
       setOrderIndex("0");
       setKbUrl("");
@@ -332,18 +351,41 @@ export function CreateReleaseModal({
             </Select>
           </div>
 
-          {/* Month Label */}
-          <div className="space-y-2">
-            <Label htmlFor="month" className="text-sm font-medium">
-              Month Label (optional)
-            </Label>
-            <Input
-              id="month"
-              placeholder="e.g., Feb 2026"
-              value={monthLabel}
-              onChange={(e) => setMonthLabel(e.target.value)}
-              disabled={loading}
-            />
+          {/* Month and Year */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Month Dropdown */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Month *</Label>
+              <Select value={monthNumber} onValueChange={setMonthNumber}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getMonthNames(lang as Language).map((month, idx) => (
+                    <SelectItem key={idx} value={(idx + 1).toString()}>
+                      {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Year Dropdown */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Year *</Label>
+              <Select value={year} onValueChange={setYear}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableYears().map((y) => (
+                    <SelectItem key={y} value={y.toString()}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Buttons */}
