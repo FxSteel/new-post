@@ -7,7 +7,9 @@ export interface NewRelease {
   month_label: string;
   month_date?: string; // Date string YYYY-MM-01
   size: "sm" | "md" | "lg";
-  image_path: string;
+  media_path: string | null;
+  media_type: "image" | "video" | null;
+  image_path?: string; // deprecated, kept for compatibility
   bullets: string[];
   kb_url: string;
   order_index: number;

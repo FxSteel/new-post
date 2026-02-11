@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,12 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { X, Plus } from "lucide-react";
+import {
+  validateMediaFile,
+  generateMediaStoragePath,
+  revokePreviewUrl,
+  type MediaType,
+} from "@/lib/media-upload";
 import {
   buildMonthDate,
   formatMonthLabel,
@@ -43,20 +49,42 @@ export function CreateReleaseModal({
   const [kbUrl, setKbUrl] = useState("");
   const [status, setStatus] = useState("published");
   const [bullets, setBullets] = useState<string[]>([]);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaType, setMediaType] = useState<MediaType | null>(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Cleanup preview URL on unmount
+  useEffect(() => {
+    return () => {
+      revokePreviewUrl(mediaPreviewUrl);
+    };
+  }, []);
+
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Validate the file
+    const validation = validateMediaFile(file);
+    if (!validation.isValid) {
+      toast.error(validation.error || "Invalid file");
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
     }
+
+    // Revoke old preview URL
+    revokePreviewUrl(mediaPreviewUrl);
+
+    // Set new media
+    setMediaFile(file);
+    setMediaType(validation.mediaType!);
+
+    // Create preview
+    const previewUrl = URL.createObjectURL(file);
+    setMediaPreviewUrl(previewUrl);
   };
 
   const handleAddBullet = () => {
@@ -83,8 +111,8 @@ export function CreateReleaseModal({
       return;
     }
 
-    if (!imageFile) {
-      toast.error("Image is required");
+    if (!mediaFile || !mediaType) {
+      toast.error("Media file (image or video) is required");
       return;
     }
 
@@ -96,13 +124,13 @@ export function CreateReleaseModal({
     setLoading(true);
 
     try {
-      // Upload image
-      const fileExt = imageFile.name.split(".").pop();
-      const fileName = `cards/${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+      // Generate storage path
+      const mediaPath = generateMediaStoragePath(mediaFile, mediaType);
 
+      // Upload media to Supabase
       const { error: uploadError } = await supabase.storage
         .from("new-releases")
-        .upload(fileName, imageFile);
+        .upload(mediaPath, mediaFile, { upsert: false });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);
@@ -126,7 +154,8 @@ export function CreateReleaseModal({
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
-            image_path: fileName,
+            media_path: mediaPath,
+            media_type: mediaType,
             bullets: bullets.filter((b) => b.trim()),
             published: status === "published",
             tenant: null,
@@ -136,8 +165,10 @@ export function CreateReleaseModal({
         .select();
 
       if (insertError) {
-        // Try to delete the uploaded image
-        await supabase.storage.from("new-releases").remove([fileName]);
+        // Try to delete the uploaded media
+        await supabase.storage.from("new-releases").remove([mediaPath]).catch(() => {
+          // Ignore delete errors
+        });
         toast.error(`Failed to create release: ${insertError.message}`);
         setLoading(false);
         return;
@@ -170,8 +201,11 @@ export function CreateReleaseModal({
       setKbUrl("");
       setStatus("published");
       setBullets([]);
-      setImageFile(null);
-      setImagePreview(null);
+      revokePreviewUrl(mediaPreviewUrl);
+      setMediaFile(null);
+      setMediaType(null);
+      setMediaPreviewUrl(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       
       onOpenChange(false);
       onSuccess();
@@ -219,35 +253,48 @@ export function CreateReleaseModal({
             </Select>
           </div>
 
-          {/* Image Upload */}
+          {/* Media Upload (Image or Video) */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Image</Label>
+            <Label className="text-sm font-medium">Media (Image or Video)</Label>
             <div className="flex items-center gap-4">
               <input
+                ref={fileInputRef}
                 type="file"
-                accept="image/*"
-                onChange={handleImageSelect}
+                accept="image/*,video/*"
+                onChange={handleMediaSelect}
                 disabled={loading}
                 className="hidden"
-                id="image-input"
+                id="media-input"
               />
               <label
-                htmlFor="image-input"
+                htmlFor="media-input"
                 className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Choose file
               </label>
-              {imageFile && <span className="text-sm text-slate-600">{imageFile.name}</span>}
+              {mediaFile && (
+                <span className="text-sm text-slate-600">
+                  {mediaFile.name} ({mediaType === "video" ? "Video" : "Image"})
+                </span>
+              )}
             </div>
-            {imagePreview && (
+            {mediaPreviewUrl && (
               <div className="mt-4 rounded-md overflow-hidden border border-slate-200">
-                <div className="aspect-[1400/732] w-full bg-slate-100">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="h-full w-full object-cover"
+                {mediaType === "video" ? (
+                  <video
+                    src={mediaPreviewUrl}
+                    controls
+                    className="w-full h-auto max-h-96 bg-slate-100"
                   />
-                </div>
+                ) : (
+                  <div className="aspect-[1400/732] w-full bg-slate-100">
+                    <img
+                      src={mediaPreviewUrl}
+                      alt="Preview"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

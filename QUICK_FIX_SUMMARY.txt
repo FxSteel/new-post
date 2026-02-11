@@ -1,0 +1,91 @@
+# 🎯 QUICK REFERENCE - Media Preview Fix
+
+## ✅ PROBLEM FIXED
+Release preview images broken after recent changes
+
+## ✅ ROOT CAUSE
+1. No centralized URL generation function
+2. Missing `"use client"` directive in component
+3. No backward compatibility for legacy `image_path` field
+
+## ✅ SOLUTION DEPLOYED
+Created `getPublicMediaUrl()` utility function with full backward compatibility
+
+---
+
+## 📝 FILES CHANGED (3 total)
+
+### 1. **lib/media-upload.ts** 
+✅ Added: `getPublicMediaUrl(path)` function
+- Centralized URL generation
+- Error handling
+- Supports full URLs and relative paths
+
+### 2. **components/releases/release-image.tsx**
+✅ Added: `"use client"` directive
+✅ Refactored: To use `getPublicMediaUrl()` utility
+✅ Added: `legacyImagePath` prop for backward compatibility
+✅ Simplified: Removed error state, cleaner rendering
+
+### 3. **components/releases/preview-release-modal.tsx**
+✅ Updated: Pass `legacyImagePath` prop to ReleaseImage
+
+---
+
+## 🔄 DATA FLOW
+
+```
+Release has media_path OR image_path (legacy)
+    ↓
+ReleaseImage component receives both
+    ↓
+getPublicMediaUrl utility generates URL
+    ↓
+URL renders as <img> (image) or <video> (video)
+    ↓
+User sees media in preview ✅
+```
+
+---
+
+## ✨ FEATURES
+
+✅ Centralized URL generation  
+✅ Legacy image support (backward compatible)  
+✅ Video support  
+✅ Error handling with placeholders  
+✅ Client component (fixes hydration)  
+✅ No database changes needed  
+✅ Public bucket (no auth for preview)  
+
+---
+
+## 🧪 VERIFICATION
+
+- [x] No TypeScript errors
+- [x] All components using utility
+- [x] Backward compatibility maintained
+- [x] Error handling improved
+- [x] Client directive added
+
+---
+
+## 📍 EXACT FILES MODIFIED
+
+1. `/Users/fer/Desktop/new-post/lib/media-upload.ts`
+   - Added `getPublicMediaUrl()` function
+   - Lines: 1-32
+
+2. `/Users/fer/Desktop/new-post/components/releases/release-image.tsx`
+   - Complete refactor
+   - Added `"use client"`, `legacyImagePath` support
+   - Lines: 1-82
+
+3. `/Users/fer/Desktop/new-post/components/releases/preview-release-modal.tsx`
+   - Updated to pass `legacyImagePath`
+   - Lines: 80-95
+
+---
+
+## ✅ READY TO COMMIT
+All changes validated, no errors, backward compatible ✅

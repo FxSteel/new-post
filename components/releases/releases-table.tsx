@@ -233,16 +233,19 @@ export function ReleasesTable({
 
       if (idsToDelete.length === 0) return;
 
-      // Delete images from storage
+      // Delete media files from storage
       const releasesToDelete = releases.filter((r) => idsToDelete.includes(r.id));
-      const imagePathsToDelete = Array.from(
-        new Set(releasesToDelete.map((r) => r.image_path))
-      );
+      const mediaPathsToDelete = Array.from(
+        new Set(releasesToDelete.map((r) => r.media_path).filter(Boolean))
+      ) as string[];
 
-      for (const imagePath of imagePathsToDelete) {
+      for (const mediaPath of mediaPathsToDelete) {
         await supabase.storage
           .from("new-releases")
-          .remove([imagePath]);
+          .remove([mediaPath])
+          .catch(() => {
+            // Ignore delete errors
+          });
       }
 
       // Delete from database

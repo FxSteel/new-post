@@ -80,12 +80,18 @@ export function PreviewReleaseModal({
             const releaseRow = groupRows.find((r) => r.lang === lang);
             if (!releaseRow) return null;
 
-            // Use image from this row, fallback to principal if missing
-            const imagePath = releaseRow.image_path || principalRow.image_path;
+            // Use media from this row, fallback to principal if missing
+            const mediaPath = releaseRow.media_path || principalRow.media_path;
+            const mediaType = releaseRow.media_type || principalRow.media_type;
+            const legacyImagePath = releaseRow.image_path || principalRow.image_path;
 
             return (
               <TabsContent key={lang} value={lang} className="space-y-6 py-4">
-                <ReleaseImage imagePath={imagePath} />
+                <ReleaseImage 
+                  mediaPath={mediaPath} 
+                  mediaType={mediaType}
+                  legacyImagePath={legacyImagePath}
+                />
 
                 <div className="space-y-4">
                   <div>

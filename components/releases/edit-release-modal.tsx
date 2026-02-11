@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,12 @@ import {
   parseMonthDate,
   type Language,
 } from "@/lib/month-helpers";
+import {
+  validateMediaFile,
+  generateMediaStoragePath,
+  revokePreviewUrl,
+  type MediaType,
+} from "@/lib/media-upload";
 
 interface EditReleaseModalProps {
   open: boolean;
@@ -45,9 +51,14 @@ export function EditReleaseModal({
   const [orderIndex, setOrderIndex] = useState("0");
   const [kbUrl, setKbUrl] = useState("");
   const [status, setStatus] = useState("published");
-  const [imagePath, setImagePath] = useState("");
+  const [mediaPath, setMediaPath] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<MediaType | null>(null);
+  const [newMediaFile, setNewMediaFile] = useState<File | null>(null);
+  const [newMediaType, setNewMediaType] = useState<MediaType | null>(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [monthNumber, setMonthNumber] = useState<string>("");
   const [year, setYear] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Group data
   const [groupRows, setGroupRows] = useState<NewRelease[]>([]);
@@ -68,13 +79,26 @@ export function EditReleaseModal({
     bullets: [] as string[],
   });
 
+  // Cleanup preview URL on unmount
+  useEffect(() => {
+    return () => {
+      revokePreviewUrl(mediaPreviewUrl);
+    };
+  }, [mediaPreviewUrl]);
+
   useEffect(() => {
     if (release && open) {
       setOrderIndex(release.order_index?.toString() || "0");
       setSize(release.size);
       setKbUrl(release.kb_url);
       setStatus(release.published ? "published" : "paused");
-      setImagePath(release.image_path);
+      setMediaPath(release.media_path || null);
+      setMediaType(release.media_type || null);
+      setNewMediaFile(null);
+      setNewMediaType(null);
+      revokePreviewUrl(mediaPreviewUrl);
+      setMediaPreviewUrl(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       
       // Parse month_date to get month and year
       if (release.month_date) {
@@ -143,6 +167,31 @@ export function EditReleaseModal({
   const loadTabData = (row: NewRelease) => {
     setTabTitle(row.title);
     setTabBullets(row.bullets || []);
+  };
+
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate the file
+    const validation = validateMediaFile(file);
+    if (!validation.isValid) {
+      toast.error(validation.error || "Invalid file");
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    // Revoke old preview URL
+    revokePreviewUrl(mediaPreviewUrl);
+
+    // Set new media
+    setNewMediaFile(file);
+    setNewMediaType(validation.mediaType!);
+
+    // Create preview
+    const previewUrl = URL.createObjectURL(file);
+    setMediaPreviewUrl(previewUrl);
   };
 
   const handleAddBullet = () => {
@@ -224,6 +273,31 @@ export function EditReleaseModal({
     setLoading(true);
 
     try {
+      let finalMediaPath = mediaPath;
+      let finalMediaType = mediaType;
+      const oldMediaPath = mediaPath;
+
+      // If user selected a new media file, upload it
+      if (newMediaFile && newMediaType) {
+        const uploadPath = generateMediaStoragePath(newMediaFile, newMediaType);
+
+        const { error: uploadError } = await supabase.storage
+          .from("new-releases")
+          .upload(uploadPath, newMediaFile, { upsert: false });
+
+        if (uploadError) {
+          toast.error(`Upload failed: ${uploadError.message}`);
+          setLoading(false);
+          return;
+        }
+
+        finalMediaPath = uploadPath;
+        finalMediaType = newMediaType;
+
+        // Optionally delete old media file (after successful upload and DB update)
+        // We'll do this at the end
+      }
+
       // Build month_date and month_label from selected month/year
       const monthDateValue = buildMonthDate(parseInt(year), parseInt(monthNumber));
       
@@ -252,7 +326,8 @@ export function EditReleaseModal({
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
             published: status === "published",
-            image_path: imagePath,
+            media_path: finalMediaPath,
+            media_type: finalMediaType,
           })
           .eq("id", row.id)
       );
@@ -262,10 +337,29 @@ export function EditReleaseModal({
       // Check for errors
       for (const result of results) {
         if (result.error) {
+          // If upload was done, try to delete the new media file on error
+          if (newMediaFile && finalMediaPath && finalMediaPath !== oldMediaPath) {
+            await supabase.storage
+                .from("new-releases")
+              .remove([finalMediaPath])
+              .catch(() => {
+                // Ignore delete errors
+              });
+          }
           toast.error(`Failed to update: ${result.error.message}`);
           setLoading(false);
           return;
         }
+      }
+
+      // If we uploaded new media and there was old media, try to delete it
+      if (newMediaFile && oldMediaPath && oldMediaPath !== finalMediaPath) {
+        await supabase.storage
+          .from("new-releases")
+          .remove([oldMediaPath])
+          .catch(() => {
+            // Ignore delete errors
+          });
       }
 
       toast.success("Release updated successfully!");
@@ -350,7 +444,8 @@ export function EditReleaseModal({
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
-            image_path: imagePath,
+            media_path: mediaPath,
+            media_type: mediaType,
             bullets: filteredBullets,
             published: status === "published",
             tenant: groupRows[0]?.tenant,
@@ -488,14 +583,65 @@ export function EditReleaseModal({
               />
             </div>
 
-            {/* Image Path Info */}
+            {/* Media (Image or Video) */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Image</Label>
-              <div className="p-2 bg-slate-50 rounded border border-slate-200 text-sm text-slate-600">
-                {imagePath || "(No image)"}
+              <Label className="text-sm font-medium">Media (Image or Video)</Label>
+              
+              {/* Existing media display */}
+              {mediaPath && (
+                <div className="p-2 bg-slate-50 rounded border border-slate-200 text-sm text-slate-600">
+                  <p className="font-medium">{mediaType === "video" ? "📹" : "🖼️"} {mediaPath}</p>
+                  <p className="text-xs mt-1 text-slate-500">Current media (select new file to replace)</p>
+                </div>
+              )}
+
+              {/* Media upload for replacement */}
+              <div className="flex items-center gap-4 pt-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleMediaSelect}
+                  disabled={loading}
+                  className="hidden"
+                  id="edit-media-input"
+                />
+                <label
+                  htmlFor="edit-media-input"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {newMediaFile ? "Change file" : "Replace media"}
+                </label>
+                {newMediaFile && (
+                  <span className="text-sm text-slate-600">
+                    {newMediaFile.name} ({newMediaType === "video" ? "Video" : "Image"})
+                  </span>
+                )}
               </div>
+
+              {/* New media preview */}
+              {mediaPreviewUrl && (
+                <div className="mt-4 rounded-md overflow-hidden border border-slate-200">
+                  {newMediaType === "video" ? (
+                    <video
+                      src={mediaPreviewUrl}
+                      controls
+                      className="w-full h-auto max-h-96 bg-slate-100"
+                    />
+                  ) : (
+                    <div className="aspect-[1400/732] w-full bg-slate-100">
+                      <img
+                        src={mediaPreviewUrl}
+                        alt="Preview"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <p className="text-xs text-slate-500">
-                Same image used for all translations in this group
+                Same media used for all translations in this group
               </p>
             </div>
 
