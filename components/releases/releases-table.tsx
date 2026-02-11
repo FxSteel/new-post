@@ -38,7 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { NewRelease } from "@/types/new-release";
 import { formatDate } from "@/lib/format";
 import { supabase } from "@/lib/supabase/client";
-import { MoreHorizontal, Eye, Trash2 } from "lucide-react";
+import { MoreHorizontal, Eye, Trash2, Zap, Bug } from "lucide-react";
 import { toast } from "sonner";
 
 interface ReleaseGroup {
@@ -76,6 +76,7 @@ export function ReleasesTable({
     month: true,
     lang: true,
     status: true,
+    type: true,
     preview: true,
     updated: true,
     actions: true,
@@ -357,6 +358,9 @@ export function ReleasesTable({
               {visibleColumns.status && (
                 <TableHead className="w-24">Status</TableHead>
               )}
+              {visibleColumns.type && (
+                <TableHead className="w-20">Type</TableHead>
+              )}
               {visibleColumns.preview && (
                 <TableHead className="w-20">Preview</TableHead>
               )}
@@ -434,6 +438,30 @@ export function ReleasesTable({
                         }
                       >
                         {group.principalRow.published ? "Published" : "Paused"}
+                      </Badge>
+                    </TableCell>
+                  )}
+                  {visibleColumns.type && (
+                    <TableCell>
+                      <Badge
+                        variant="default"
+                        className={
+                          group.principalRow.release_type === "bug"
+                            ? "bg-red-100 text-red-900 border border-red-200"
+                            : "bg-blue-100 text-blue-900 border border-blue-200"
+                        }
+                      >
+                        {group.principalRow.release_type === "bug" ? (
+                          <>
+                            <Bug className="h-3 w-3 mr-1 inline" />
+                            Bug
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="h-3 w-3 mr-1 inline" />
+                            Feature
+                          </>
+                        )}
                       </Badge>
                     </TableCell>
                   )}

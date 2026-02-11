@@ -48,6 +48,7 @@ export function CreateReleaseModal({
   const [orderIndex, setOrderIndex] = useState("0");
   const [kbUrl, setKbUrl] = useState("");
   const [status, setStatus] = useState("published");
+  const [releaseType, setReleaseType] = useState<"feature" | "bug">("feature");
   const [bullets, setBullets] = useState<string[]>([]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<MediaType | null>(null);
@@ -158,6 +159,7 @@ export function CreateReleaseModal({
             media_type: mediaType,
             bullets: bullets.filter((b) => b.trim()),
             published: status === "published",
+            release_type: releaseType,
             tenant: null,
             group_id: null,
           },
@@ -200,6 +202,7 @@ export function CreateReleaseModal({
       setOrderIndex("0");
       setKbUrl("");
       setStatus("published");
+      setReleaseType("feature");
       setBullets([]);
       revokePreviewUrl(mediaPreviewUrl);
       setMediaFile(null);
@@ -363,6 +366,20 @@ export function CreateReleaseModal({
                 <SelectItem value="sm">Small</SelectItem>
                 <SelectItem value="md">Medium</SelectItem>
                 <SelectItem value="lg">Large</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Tipo (Release Type) */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Tipo</Label>
+            <Select value={releaseType} onValueChange={(v) => setReleaseType(v as "feature" | "bug")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="feature">Feature</SelectItem>
+                <SelectItem value="bug">Bug</SelectItem>
               </SelectContent>
             </Select>
           </div>

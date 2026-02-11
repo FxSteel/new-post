@@ -70,6 +70,7 @@ export function EditReleaseModal({
   // Per-language state for active tab
   const [tabTitle, setTabTitle] = useState("");
   const [tabBullets, setTabBullets] = useState<string[]>([]);
+  const [tabReleaseType, setTabReleaseType] = useState<"feature" | "bug">("feature");
   
   // Translation form draft
   const [translationDraft, setTranslationDraft] = useState({
@@ -167,6 +168,7 @@ export function EditReleaseModal({
   const loadTabData = (row: NewRelease) => {
     setTabTitle(row.title);
     setTabBullets(row.bullets || []);
+    setTabReleaseType(row.release_type || "feature");
   };
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -309,6 +311,7 @@ export function EditReleaseModal({
             title: tabTitle,
             bullets: tabBullets.filter((b) => b.trim()),
             month_date: monthDateValue,
+            release_type: tabReleaseType,
           };
         }
         return row;
@@ -328,6 +331,7 @@ export function EditReleaseModal({
             published: status === "published",
             media_path: finalMediaPath,
             media_type: finalMediaType,
+            release_type: row.release_type,
           })
           .eq("id", row.id)
       );
@@ -448,6 +452,7 @@ export function EditReleaseModal({
             media_type: mediaType,
             bullets: filteredBullets,
             published: status === "published",
+            release_type: groupRows[0]?.release_type || "feature",
             tenant: groupRows[0]?.tenant,
             group_id: groupIdToUse,
           },
@@ -724,6 +729,23 @@ export function EditReleaseModal({
                         onChange={(e) => activeTab === row.lang && setTabTitle(e.target.value)}
                         disabled={loading || activeTab !== row.lang}
                       />
+                    </div>
+
+                    {/* Tipo (Release Type) */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Tipo</Label>
+                      <Select 
+                        value={activeTab === row.lang ? tabReleaseType : ""} 
+                        onValueChange={(v) => activeTab === row.lang && setTabReleaseType(v as "feature" | "bug")}
+                      >
+                        <SelectTrigger disabled={loading || activeTab !== row.lang}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="feature">Feature</SelectItem>
+                          <SelectItem value="bug">Bug</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {/* Month Label */}
