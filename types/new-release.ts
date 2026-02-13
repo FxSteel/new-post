@@ -15,6 +15,7 @@ export interface NewRelease {
   order_index: number;
   published: boolean;
   release_type: "feature" | "bug";
+  has_cost: boolean;
   created_at: string;
   updated_at: string;
 }

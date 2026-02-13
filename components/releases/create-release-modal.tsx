@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { X, Plus } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import {
   validateMediaFile,
   generateMediaStoragePath,
@@ -49,6 +50,7 @@ export function CreateReleaseModal({
   const [kbUrl, setKbUrl] = useState("");
   const [status, setStatus] = useState("published");
   const [releaseType, setReleaseType] = useState<"feature" | "bug">("feature");
+  const [hasCost, setHasCost] = useState(false);
   const [bullets, setBullets] = useState<string[]>([]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<MediaType | null>(null);
@@ -160,6 +162,7 @@ export function CreateReleaseModal({
             bullets: bullets.filter((b) => b.trim()),
             published: status === "published",
             release_type: releaseType,
+            has_cost: releaseType === "bug" ? false : hasCost,
             tenant: null,
             group_id: null,
           },
@@ -203,6 +206,7 @@ export function CreateReleaseModal({
       setKbUrl("");
       setStatus("published");
       setReleaseType("feature");
+      setHasCost(false);
       setBullets([]);
       revokePreviewUrl(mediaPreviewUrl);
       setMediaFile(null);
@@ -373,7 +377,14 @@ export function CreateReleaseModal({
           {/* Tipo (Release Type) */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Tipo</Label>
-            <Select value={releaseType} onValueChange={(v) => setReleaseType(v as "feature" | "bug")}>
+            <Select value={releaseType} onValueChange={(v) => {
+              const newType = v as "feature" | "bug";
+              setReleaseType(newType);
+              // Auto-disable has_cost for bugs
+              if (newType === "bug") {
+                setHasCost(false);
+              }
+            }}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -382,6 +393,21 @@ export function CreateReleaseModal({
                 <SelectItem value="bug">Bug</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Has Cost */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Tiene costo asociado</Label>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={hasCost}
+                onCheckedChange={setHasCost}
+                disabled={releaseType === "bug" || loading}
+              />
+              <span className="text-sm text-slate-600">
+                {releaseType === "bug" ? "(Disabled for Bug releases)" : hasCost ? "Yes" : "No"}
+              </span>
+            </div>
           </div>
 
           {/* KB URL */}

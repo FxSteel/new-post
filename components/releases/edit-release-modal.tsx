@@ -18,6 +18,7 @@ import { NewRelease } from "@/types/new-release";
 import { supabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { X, Plus, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import {
   buildMonthDate,
   formatMonthLabel,
@@ -71,6 +72,7 @@ export function EditReleaseModal({
   const [tabTitle, setTabTitle] = useState("");
   const [tabBullets, setTabBullets] = useState<string[]>([]);
   const [tabReleaseType, setTabReleaseType] = useState<"feature" | "bug">("feature");
+  const [tabHasCost, setTabHasCost] = useState(false);
   
   // Translation form draft
   const [translationDraft, setTranslationDraft] = useState({
@@ -169,6 +171,7 @@ export function EditReleaseModal({
     setTabTitle(row.title);
     setTabBullets(row.bullets || []);
     setTabReleaseType(row.release_type || "feature");
+    setTabHasCost(row.has_cost || false);
   };
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -312,12 +315,13 @@ export function EditReleaseModal({
             bullets: tabBullets.filter((b) => b.trim()),
             month_date: monthDateValue,
             release_type: tabReleaseType,
+            has_cost: tabReleaseType === "bug" ? false : tabHasCost,
           };
         }
         return row;
       });
 
-      // Update all rows in the group
+      // Update all rows in the group (share has_cost across all translations)
       const updatePromises = updatedRows.map((row) =>
         supabase
           .from("new_releases")
@@ -332,6 +336,7 @@ export function EditReleaseModal({
             media_path: finalMediaPath,
             media_type: finalMediaType,
             release_type: row.release_type,
+            has_cost: row.has_cost,
           })
           .eq("id", row.id)
       );
@@ -453,6 +458,7 @@ export function EditReleaseModal({
             bullets: filteredBullets,
             published: status === "published",
             release_type: groupRows[0]?.release_type || "feature",
+            has_cost: (groupRows[0]?.release_type === "bug") ? false : (groupRows[0]?.has_cost || false),
             tenant: groupRows[0]?.tenant,
             group_id: groupIdToUse,
           },
@@ -736,7 +742,16 @@ export function EditReleaseModal({
                       <Label className="text-sm font-medium">Tipo</Label>
                       <Select 
                         value={activeTab === row.lang ? tabReleaseType : ""} 
-                        onValueChange={(v) => activeTab === row.lang && setTabReleaseType(v as "feature" | "bug")}
+                        onValueChange={(v) => {
+                          if (activeTab === row.lang) {
+                            const newType = v as "feature" | "bug";
+                            setTabReleaseType(newType);
+                            // Auto-disable has_cost for bugs
+                            if (newType === "bug") {
+                              setTabHasCost(false);
+                            }
+                          }
+                        }}
                       >
                         <SelectTrigger disabled={loading || activeTab !== row.lang}>
                           <SelectValue />
@@ -746,6 +761,26 @@ export function EditReleaseModal({
                           <SelectItem value="bug">Bug</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    {/* Has Cost */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Tiene costo asociado</Label>
+                      <div className="flex items-center gap-3">
+                        <Switch
+                          checked={activeTab === row.lang ? tabHasCost : false}
+                          onCheckedChange={(checked) => activeTab === row.lang && setTabHasCost(checked)}
+                          disabled={loading || activeTab !== row.lang || tabReleaseType === "bug"}
+                        />
+                        <span className="text-sm text-slate-600">
+                          {activeTab === row.lang ? (
+                            tabReleaseType === "bug" 
+                              ? "(Disabled for Bug releases)" 
+                              : tabHasCost ? "Yes" : "No"
+                          ) : ""}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">Shared across all translations in this group</p>
                     </div>
 
                     {/* Month Label */}

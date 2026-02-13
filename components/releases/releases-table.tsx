@@ -38,7 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { NewRelease } from "@/types/new-release";
 import { formatDate } from "@/lib/format";
 import { supabase } from "@/lib/supabase/client";
-import { MoreHorizontal, Eye, Trash2, Zap, Bug } from "lucide-react";
+import { MoreHorizontal, Eye, Trash2, Zap, Bug, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 interface ReleaseGroup {
@@ -443,26 +443,34 @@ export function ReleasesTable({
                   )}
                   {visibleColumns.type && (
                     <TableCell>
-                      <Badge
-                        variant="default"
-                        className={
-                          group.principalRow.release_type === "bug"
-                            ? "bg-red-100 text-red-900 border border-red-200"
-                            : "bg-blue-100 text-blue-900 border border-blue-200"
-                        }
-                      >
-                        {group.principalRow.release_type === "bug" ? (
-                          <>
-                            <Bug className="h-3 w-3 mr-1 inline" />
-                            Bug
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="h-3 w-3 mr-1 inline" />
-                            Feature
-                          </>
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <Badge
+                          variant="default"
+                          className={
+                            group.principalRow.release_type === "bug"
+                              ? "bg-red-100 text-red-900 border border-red-200"
+                              : "bg-blue-100 text-blue-900 border border-blue-200"
+                          }
+                        >
+                          {group.principalRow.release_type === "bug" ? (
+                            <>
+                              <Bug className="h-3 w-3 mr-1 inline" />
+                              Bug
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="h-3 w-3 mr-1 inline" />
+                              Feature
+                            </>
+                          )}
+                        </Badge>
+                        {group.principalRow.release_type === "feature" && group.principalRow.has_cost && (
+                          <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+                            <Tag className="h-3 w-3 mr-1 inline" />
+                            Con costo
+                          </Badge>
                         )}
-                      </Badge>
+                      </div>
                     </TableCell>
                   )}
                   {visibleColumns.preview && (
