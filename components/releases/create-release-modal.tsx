@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -48,7 +49,6 @@ export function CreateReleaseModal({
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
   const [orderIndex, setOrderIndex] = useState("0");
   const [kbUrl, setKbUrl] = useState("");
-  const [status, setStatus] = useState("published");
   const [releaseType, setReleaseType] = useState<"feature" | "bug">("feature");
   const [hasCost, setHasCost] = useState(false);
   const [bullets, setBullets] = useState<string[]>([]);
@@ -160,7 +160,7 @@ export function CreateReleaseModal({
             media_path: mediaPath,
             media_type: mediaType,
             bullets: bullets.filter((b) => b.trim()),
-            published: status === "published",
+            published: true,
             release_type: releaseType,
             has_cost: releaseType === "bug" ? false : hasCost,
             tenant: null,
@@ -204,7 +204,6 @@ export function CreateReleaseModal({
       setSize("md");
       setOrderIndex("0");
       setKbUrl("");
-      setStatus("published");
       setReleaseType("feature");
       setHasCost(false);
       setBullets([]);
@@ -425,20 +424,13 @@ export function CreateReleaseModal({
             />
           </div>
 
-          {/* Status */}
+          {/* Status: Read-only (always published for new releases) */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Status</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="published">Published</SelectItem>
-                <SelectItem value="paused" disabled>
-                  Paused
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <Badge className="bg-green-100 text-green-900 border border-green-200 w-fit">
+              Publicado
+            </Badge>
+            <p className="text-xs text-slate-500 mt-1">Los nuevos releases se crean como publicados</p>
           </div>
 
           {/* Month and Year */}

@@ -332,7 +332,6 @@ export function EditReleaseModal({
             size,
             order_index: parseInt(orderIndex),
             kb_url: kbUrl,
-            published: status === "published",
             media_path: finalMediaPath,
             media_type: finalMediaType,
             release_type: row.release_type,
@@ -456,7 +455,7 @@ export function EditReleaseModal({
             media_path: mediaPath,
             media_type: mediaType,
             bullets: filteredBullets,
-            published: status === "published",
+            published: groupRows[0]?.published || false,
             release_type: groupRows[0]?.release_type || "feature",
             has_cost: (groupRows[0]?.release_type === "bug") ? false : (groupRows[0]?.has_cost || false),
             tenant: groupRows[0]?.tenant,
@@ -537,18 +536,19 @@ export function EditReleaseModal({
           <div className="space-y-4 border-b border-slate-200 pb-4">
             <h3 className="text-sm font-semibold text-slate-900">Shared Settings</h3>
 
-            {/* Published Status */}
+            {/* Published Status (Read-only) */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Status</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="paused">Paused</SelectItem>
-                </SelectContent>
-              </Select>
+              <Badge
+                className={
+                  status === "published"
+                    ? "bg-green-100 text-green-900 border border-green-200 w-fit"
+                    : "bg-blue-100 text-blue-900 border border-blue-200 w-fit"
+                }
+              >
+                {status === "published" ? "Publicado" : "Oculto"}
+              </Badge>
+              <p className="text-xs text-slate-500 mt-1">published solo se controla fuera del admin (super admin/otra capa)</p>
             </div>
 
             {/* Order Index */}

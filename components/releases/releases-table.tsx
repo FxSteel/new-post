@@ -35,6 +35,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { NewRelease } from "@/types/new-release";
 import { formatDate } from "@/lib/format";
 import { supabase } from "@/lib/supabase/client";
@@ -74,6 +80,7 @@ export function ReleasesTable({
   const [visibleColumns, setVisibleColumns] = useState({
     order: true,
     month: true,
+    title: true,
     lang: true,
     status: true,
     type: true,
@@ -105,6 +112,21 @@ export function ReleasesTable({
     const esRow = rows.find((r) => r.lang === "ES");
     if (esRow) return esRow;
     return rows[0];
+  };
+
+  // Get Spanish title with fallback ES -> EN -> first available
+  const getSpanishTitle = (rows: NewRelease[]): string => {
+    const esRow = rows.find((r) => r.lang === "ES");
+    if (esRow) return esRow.title;
+    const enRow = rows.find((r) => r.lang === "EN");
+    if (enRow) return enRow.title;
+    return rows[0]?.title || "";
+  };
+
+  // Truncate text with ellipsis if longer than maxLength
+  const truncateText = (text: string, maxLength: number = 60): string => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + "...";
   };
 
   // Build grouped rows
@@ -325,8 +347,8 @@ export function ReleasesTable({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Status</SelectItem>
-              <SelectItem value="published">Published</SelectItem>
-              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="published">Publicado</SelectItem>
+              <SelectItem value="paused">Oculto</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -353,6 +375,9 @@ export function ReleasesTable({
               )}
               {visibleColumns.month && (
                 <TableHead className="w-32">Month</TableHead>
+              )}
+              {visibleColumns.title && (
+                <TableHead className="w-60">Título (ES)</TableHead>
               )}
               {visibleColumns.lang && <TableHead className="w-16">Lang</TableHead>}
               {visibleColumns.status && (
@@ -406,9 +431,25 @@ export function ReleasesTable({
                       {group.principalRow.month_label}
                     </TableCell>
                   )}
+                  {visibleColumns.title && (
+                    <TableCell className="text-sm text-slate-900">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="truncate cursor-help">
+                              {truncateText(getSpanishTitle(group.allRows))}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">{getSpanishTitle(group.allRows)}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableCell>
+                  )}
                   {visibleColumns.lang && (
                     <TableCell className="text-sm text-slate-900">
-                      <div className="flex gap-1 flex-wrap">
+                      <div className="flex gap-1 flex-nowrap items-center">
                         {group.languages.map((lang) => {
                           let badgeClasses = "";
                           if (lang === "ES") {
@@ -434,16 +475,16 @@ export function ReleasesTable({
                         className={
                           group.principalRow.published
                             ? "bg-green-100 text-green-900 border border-green-200"
-                            : "bg-slate-100 text-slate-900 border border-slate-200"
+                            : "bg-blue-100 text-blue-900 border border-blue-200"
                         }
                       >
-                        {group.principalRow.published ? "Published" : "Paused"}
+                        {group.principalRow.published ? "Publicado" : "Oculto"}
                       </Badge>
                     </TableCell>
                   )}
                   {visibleColumns.type && (
                     <TableCell>
-                      <div className="flex gap-2 flex-wrap items-center">
+                      <div className="flex gap-2 flex-nowrap items-center">
                         <Badge
                           variant="default"
                           className={
