@@ -44,7 +44,7 @@ import {
 import { NewRelease } from "@/types/new-release";
 import { formatDate } from "@/lib/format";
 import { supabase } from "@/lib/supabase/client";
-import { MoreHorizontal, Eye, Trash2, Zap, Bug, Tag } from "lucide-react";
+import { MoreHorizontal, Eye, Trash2, Zap, Bug, Tag, Ban, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface ReleaseGroup {
@@ -91,6 +91,7 @@ export function ReleasesTable({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Group releases by groupKey = group_id ?? id
   const groupReleases = (): Map<string, NewRelease[]> => {
@@ -225,6 +226,67 @@ export function ReleasesTable({
     }
 
     setSelectedIds(newSelected);
+  };
+
+  const handleStatusChange = async (groupKey: string, nextStatus: "Publicado" | "Oculto") => {
+    // Guard: prevent multiple simultaneous updates
+    if (updatingStatus === groupKey) return;
+
+    const group = groupedRows.find((g) => g.groupKey === groupKey);
+    if (!group) return;
+
+    setUpdatingStatus(groupKey);
+    try {
+      // Check session before update
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("No hay sesión activa. Por favor, recarga la página e intenta de nuevo.");
+      }
+
+      console.log("✓ Sesión activa - user_id:", session.user.id);
+
+      const isHidden = nextStatus === "Oculto";
+      const newPublishedValue = !isHidden;
+
+      // Update all rows in this group to the same published status
+      const rowsToUpdate = group.allRows.map((row) => ({
+        ...row,
+        published: newPublishedValue,
+      }));
+
+      // Update each row in the group
+      for (const row of group.allRows) {
+        const { error } = await supabase
+          .from("new_releases")
+          .update({ published: newPublishedValue })
+          .eq("id", row.id);
+
+        if (error) {
+          console.error("Error updating status for row", row.id, error);
+          throw error;
+        }
+      }
+
+      // Update local state optimistically
+      const updatedReleases = releases.map((r) =>
+        group.allRows.some((gr) => gr.id === r.id)
+          ? { ...r, published: newPublishedValue }
+          : r
+      );
+
+      // Trigger refresh through parent component
+      onRefresh();
+
+      toast.success(`Release(s) marked as ${nextStatus}`);
+      console.log(`✓ Status updated to ${nextStatus} for group ${groupKey}`);
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Error al actualizar status";
+      console.error("handleStatusChange error:", err);
+      toast.error(errorMsg);
+    } finally {
+      setUpdatingStatus(null);
+    }
   };
 
   const handleDeleteSingle = (groupKey: string) => {
@@ -470,16 +532,43 @@ export function ReleasesTable({
                   )}
                   {visibleColumns.status && (
                     <TableCell>
-                      <Badge
-                        variant="default"
-                        className={
-                          group.principalRow.published
-                            ? "bg-green-100 text-green-900 border border-green-200"
-                            : "bg-blue-100 text-blue-900 border border-blue-200"
+                      <Select
+                        value={group.principalRow.published ? "publicado" : "oculto"}
+                        onValueChange={(value) =>
+                          handleStatusChange(
+                            group.groupKey,
+                            value === "publicado" ? "Publicado" : "Oculto"
+                          )
                         }
+                        disabled={updatingStatus === group.groupKey}
                       >
-                        {group.principalRow.published ? "Publicado" : "Oculto"}
-                      </Badge>
+                        <SelectTrigger
+                          className={`w-40 ${
+                            !group.principalRow.published
+                              ? "bg-red-50 border-red-200 text-red-600"
+                              : "bg-green-50 border-green-200 text-green-700"
+                          }`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="publicado" className="bg-green-50">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                              <span className="text-green-700">Published</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="oculto" className="bg-red-50">
+                            <div className="flex items-center gap-2">
+                              <Ban className="w-4 h-4 text-red-500" />
+                              <span className="text-red-600">Hide</span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {updatingStatus === group.groupKey && (
+                        <p className="text-xs text-slate-500 mt-1">Actualizando...</p>
+                      )}
                     </TableCell>
                   )}
                   {visibleColumns.type && (
